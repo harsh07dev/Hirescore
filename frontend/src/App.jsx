@@ -3,61 +3,106 @@ import CreateJob from './components/CreateJob';
 import UploadResumes from './components/UploadResumes';
 
 // ─── Candidate Card ──────────────────────────────────────────────────────────
-const CandidateCard = ({ candidate }) => {
+const CandidateCard = ({ candidate, onScreen, screening }) => {
   const isPending = !candidate.fit_score || candidate.fit_score === 0;
-  const truncated =
-    candidate.resume_text && candidate.resume_text.length > 100
-      ? candidate.resume_text.slice(0, 100) + '…'
-      : candidate.resume_text || 'No resume text available.';
+
+  // Colored score badge
+  const scoreBadgeClass = candidate.fit_score >= 80
+    ? 'bg-green-900/40 text-green-300 border-green-700'
+    : candidate.fit_score >= 50
+    ? 'bg-yellow-900/40 text-yellow-300 border-yellow-700'
+    : 'bg-red-900/40 text-red-300 border-red-700';
 
   const stageColors = {
-    applied: 'bg-blue-900/40 text-blue-300 border-blue-700',
+    applied:   'bg-blue-900/40 text-blue-300 border-blue-700',
     screening: 'bg-yellow-900/40 text-yellow-300 border-yellow-700',
     interview: 'bg-purple-900/40 text-purple-300 border-purple-700',
-    offer: 'bg-green-900/40 text-green-300 border-green-700',
-    rejected: 'bg-red-900/40 text-red-300 border-red-700',
+    offer:     'bg-green-900/40 text-green-300 border-green-700',
+    rejected:  'bg-red-900/40 text-red-300 border-red-700',
   };
-
   const stageClass =
     stageColors[candidate.stage?.toLowerCase()] ||
     'bg-gray-700/50 text-gray-300 border-gray-600';
 
   return (
     <div className="bg-gray-800 border border-gray-700 hover:border-gray-500 rounded-lg p-5 transition-colors">
+      {/* Header row */}
       <div className="flex items-start justify-between gap-3 mb-3">
-        {/* Name */}
+        {/* Avatar + Name */}
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center flex-shrink-0 text-sm font-bold text-white">
             {candidate.name ? candidate.name[0].toUpperCase() : '?'}
           </div>
-          <span className="font-semibold text-white truncate">{candidate.name || 'Unknown'}</span>
+          <div className="min-w-0">
+            <span className="font-semibold text-white truncate block">
+              {candidate.name || 'Unknown'}
+            </span>
+            {candidate.email ? (
+              <span className="text-xs text-gray-400 truncate block">{candidate.email}</span>
+            ) : null}
+          </div>
         </div>
 
-        {/* Fit Score */}
-        <div
-          className={`flex-shrink-0 text-sm font-semibold px-3 py-1 rounded-full border ${
-            isPending
-              ? 'bg-gray-700/50 text-gray-400 border-gray-600'
-              : candidate.fit_score >= 75
-              ? 'bg-green-900/40 text-green-300 border-green-700'
-              : candidate.fit_score >= 50
-              ? 'bg-yellow-900/40 text-yellow-300 border-yellow-700'
-              : 'bg-red-900/40 text-red-300 border-red-700'
-          }`}
-        >
-          {isPending ? 'Pending' : `Score: ${candidate.fit_score}`}
-        </div>
+        {/* Fit score badge OR Screen button */}
+        {!isPending ? (
+          <span
+            className={`flex-shrink-0 text-sm font-bold px-3 py-1 rounded-full border ${scoreBadgeClass}`}
+          >
+            {candidate.fit_score}%
+          </span>
+        ) : (
+          <button
+            id={`screen-candidate-${candidate.id}`}
+            disabled={screening}
+            onClick={() => onScreen(candidate.id)}
+            className={`flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-md border transition-all duration-150 ${
+              screening
+                ? 'bg-indigo-900/40 text-indigo-300 border-indigo-700 cursor-not-allowed animate-pulse'
+                : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500 cursor-pointer'
+            }`}
+          >
+            {screening ? '⏳ Screening…' : '✨ Screen with AI'}
+          </button>
+        )}
       </div>
 
-      {/* Stage Badge */}
-      <span
-        className={`inline-block text-xs font-medium px-2 py-0.5 rounded border mb-3 ${stageClass}`}
-      >
+      {/* Stage badge */}
+      <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded border mb-3 ${stageClass}`}>
         {candidate.stage || 'applied'}
       </span>
 
-      {/* Resume Snippet */}
-      <p className="text-gray-400 text-sm leading-relaxed font-mono">{truncated}</p>
+      {/* AI Results (shown after screening) */}
+      {!isPending && (
+        <div className="mt-3 space-y-2 text-sm">
+          {candidate.experience ? (
+            <div className="flex items-center gap-2 text-gray-300">
+              <span className="text-gray-500 text-xs uppercase tracking-wide w-24 flex-shrink-0">Experience</span>
+              <span>{candidate.experience}</span>
+            </div>
+          ) : null}
+          {candidate.skills ? (
+            <div className="flex items-start gap-2 text-gray-300">
+              <span className="text-gray-500 text-xs uppercase tracking-wide w-24 flex-shrink-0 pt-0.5">Skills</span>
+              <span className="leading-relaxed">{candidate.skills}</span>
+            </div>
+          ) : null}
+          {candidate.strengths ? (
+            <div className="flex items-start gap-2 text-gray-300">
+              <span className="text-gray-500 text-xs uppercase tracking-wide w-24 flex-shrink-0 pt-0.5">Strengths</span>
+              <span className="leading-relaxed">{candidate.strengths}</span>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Resume snippet — only while pending */}
+      {isPending && (
+        <p className="text-gray-500 text-xs leading-relaxed font-mono mt-2">
+          {candidate.resume_text && candidate.resume_text.length > 120
+            ? candidate.resume_text.slice(0, 120) + '…'
+            : candidate.resume_text || 'No resume text available.'}
+        </p>
+      )}
     </div>
   );
 };
@@ -67,6 +112,8 @@ const JobDetail = ({ job, onBack }) => {
   const [candidates, setCandidates] = useState([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidatesError, setCandidatesError] = useState('');
+  // Track which candidate IDs are currently being screened
+  const [screeningIds, setScreeningIds] = useState(new Set());
 
   const fetchCandidates = async () => {
     setCandidatesLoading(true);
@@ -85,7 +132,27 @@ const JobDetail = ({ job, onBack }) => {
     }
   };
 
-  // Fetch candidates when the detail view mounts
+  const screenCandidate = async (candidateId) => {
+    setScreeningIds((prev) => new Set(prev).add(candidateId));
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:5000/api/candidates/${candidateId}/score`,
+        { method: 'POST' }
+      );
+      if (!res.ok) throw new Error('Screening request failed');
+      // Re-fetch the full list so order (by fit_score DESC) is respected
+      await fetchCandidates();
+    } catch (err) {
+      console.error('Screening error:', err);
+    } finally {
+      setScreeningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(candidateId);
+        return next;
+      });
+    }
+  };
+
   useEffect(() => {
     fetchCandidates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,7 +212,12 @@ const JobDetail = ({ job, onBack }) => {
 
         <div className="space-y-3">
           {candidates.map((c) => (
-            <CandidateCard key={c.id} candidate={c} />
+            <CandidateCard
+              key={c.id}
+              candidate={c}
+              onScreen={screenCandidate}
+              screening={screeningIds.has(c.id)}
+            />
           ))}
         </div>
       </div>

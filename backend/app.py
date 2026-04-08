@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import sqlite3, os
+import sqlite3, os, json
 import fitz  # PyMuPDF
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 app = Flask(__name__)
@@ -128,6 +129,88 @@ def get_candidates(job_id):
     ).fetchall()
     conn.close()
     return jsonify([dict(row) for row in rows])
+
+
+@app.route("/api/candidates/<int:candidate_id>/score", methods=["POST"])
+def score_candidate(candidate_id):
+    conn = get_db()
+
+    # Fetch candidate
+    candidate = conn.execute(
+        "SELECT * FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    if not candidate:
+        conn.close()
+        return jsonify({"error": "Candidate not found"}), 404
+
+    # Fetch associated job
+    job = conn.execute(
+        "SELECT * FROM jobs WHERE id = ?", (candidate["job_id"],)
+    ).fetchone()
+    if not job:
+        conn.close()
+        return jsonify({"error": "Associated job not found"}), 404
+
+    # Build Groq prompt
+    prompt = f"""You are an expert technical recruiter. Evaluate the following resume against the job description below.
+
+Job Title: {job['title']}
+Job Description:
+{job['description']}
+
+Resume:
+{candidate['resume_text']}
+
+Respond ONLY with a valid raw JSON object. Do NOT include any markdown, code fences, or explanation.
+The JSON must contain exactly these keys:
+- name (string): candidate's full name extracted from the resume
+- email (string): candidate's email extracted from the resume
+- fit_score (integer 0-100): how well the candidate fits the job
+- strengths (string): comma-separated list of key strengths relevant to this job
+- weaknesses (string): comma-separated list of areas where the candidate falls short
+- skills (string): comma-separated list of technical/professional skills found in the resume
+- experience (string): total years of experience, e.g. '3 years'"""
+
+    # Call Groq
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.3-70b-versatile",
+    )
+    raw = chat_completion.choices[0].message.content.strip()
+
+    # Parse JSON response
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        conn.close()
+        return jsonify({"error": "Failed to parse AI response", "raw": raw}), 500
+
+    # Update candidate row
+    conn.execute(
+        """UPDATE candidates
+           SET name = ?, email = ?, fit_score = ?, strengths = ?,
+               weaknesses = ?, skills = ?, experience = ?
+           WHERE id = ?""",
+        (
+            result.get("name", ""),
+            result.get("email", ""),
+            result.get("fit_score", 0),
+            result.get("strengths", ""),
+            result.get("weaknesses", ""),
+            result.get("skills", ""),
+            result.get("experience", ""),
+            candidate_id,
+        ),
+    )
+    conn.commit()
+
+    # Return updated candidate
+    updated = conn.execute(
+        "SELECT * FROM candidates WHERE id = ?", (candidate_id,)
+    ).fetchone()
+    conn.close()
+    return jsonify(dict(updated))
 
 
 if __name__ == "__main__":
